@@ -1,8 +1,9 @@
 import rosbag
 import cv2
 from cv_bridge import CvBridge
-
-bag_file = '/home/darshit/rosbags/enae788m/2023-05-16-05-09-08.bag'  # Replace with the path to your ROS bag file
+import numpy as np
+import matplotlib.pylab as plt
+bag_file = '/home/shivam/Dronebag/test.bag'  # Replace with the path to your ROS bag file
 topic = '/camera/depth/image_rect_raw'  # Replace with the specific image topic you want to process
 # max_messages = 500  # Number of messages to process
 
@@ -44,8 +45,46 @@ bag.close()
 
 # Display the first depth image
 if depth_images:
-    first_depth_image = depth_images[-1200]
+    
+    first_depth_image = depth_images[700]
+    print(first_depth_image)
     cv2.imshow("First Depth Image", first_depth_image)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
     # You can add additional processing logic here after the imshow
+
+depth_image=first_depth_image
+
+# Extract the depth values from the image
+depth_values = depth_image.flatten()
+depth_values = depth_values[depth_values != 0]
+# Compute the histogram
+hist, bins = np.histogram(depth_values, bins=50, range=(0, 1000))  # Adjust the number of bins and range as needed
+
+# Plot the histogram
+plt.bar(bins[:-1], hist, width=1)
+plt.xlabel('Depth Value')
+plt.ylabel('Frequency')
+plt.title('Depth Value Histogram')
+plt.show()
+bin_size=20
+# Compute the column-wise depth value histograms
+# Compute the column-wise depth value histograms
+num_columns = depth_image.shape[1]
+histograms = np.zeros((bin_size, 1), dtype=np.int16)
+
+for col in range(num_columns):
+    column_values = depth_image[:, col]
+    histogram, _ = np.histogram(column_values, bins=bin_size, range=(0,1000))
+    histograms = np.column_stack((histograms, histogram))
+    
+    
+    
+
+# Display the U-depth map
+plt.imshow(histograms, cmap='gray')
+plt.xlabel('Column')
+plt.ylabel('Row')
+plt.title('U-Depth Map')
+plt.colorbar()
+plt.show()
