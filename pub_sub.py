@@ -5,6 +5,8 @@ import rospy
 from rospy.numpy_msg import numpy_msg
 from rospy_tutorials.msg import Floats
 from sensor_msgs.msg import Image
+import os
+os.environ['ROS_PYTHON_VERSION'] = '3'  # Replace '3' with your desired OpenCV version
 from cv_bridge import CvBridge, CvBridgeError
 import sys
 import os
