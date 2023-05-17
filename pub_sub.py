@@ -45,7 +45,7 @@ class ImageListener:
 
 		focal_length = 382.681243896484
 		T_poi = 500
-		T_tho = 1000
+		T_tho = 1800
 		values = list(range(0, 3001, 15))  # Generate the list of values spaced in 50 divisions from 0 to 3000
 		averages = []
 
