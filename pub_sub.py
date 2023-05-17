@@ -16,15 +16,19 @@ import numpy as np
 import copy as copy
 
 class ImageListener:
-	def __init__(self, topic):
-		self.topic = topic
+	def __init__(self, topic1, topic2):
+		self.topic1 = topic1
+		self.topic2 = topic2
+		self.color_image = None
 		self.bridge = CvBridge()
-		self.sub = rospy.Subscriber(topic, msg_Image, self.imageDepthCallback,queue_size=1)
+		self.sub1 = rospy.Subscriber(topic1, msg_Image, self.imageDepthCallback1,queue_size=1)
+		self.sub2 = rospy.Subscriber(topic2, msg_Image, self.imageCallback2,queue_size=1)
 		self.pub = rospy.Publisher('/obstacle_detections', msg_Image, queue_size=1)
 	def imageDepthCallback(self, data):
 		cv_image = self.bridge.imgmsg_to_cv2(data, data.encoding)
 		self.imagePublisher(cv_image)
-
+	def imageCallback2(self, data):
+		self.color_image = self.bridge.imgmsg_to_cv2(data, data.encoding)    
 	def imagePublisher(self,cv_image):
 		depth_image = copy.deepcopy(cv_image)
 		depth_values = depth_image.flatten()
@@ -116,7 +120,7 @@ class ImageListener:
 
 		height_o_body = (-h_t+h_b)*d_b*15 / focal_length
 		if(z_o_body*15 < 1200):
-			cv2.rectangle(converted_image_depth, (y_min, x_min), (y_max, x_max), (255, 0, 0), 2)
+			cv2.rectangle(self.color_image, (y_min, x_min), (y_max, x_max), (255, 0, 0), 2)
 		
 		modified_msg = self.bridge.cv2_to_imgmsg(converted_image_depth, encoding='mono8')
 		modified_msg.header = Header(stamp=rospy.Time.now())
@@ -127,6 +131,7 @@ class ImageListener:
 
 if __name__ == '__main__':
 	rospy.init_node("depth_image_processor")
-	topic = '/camera/depth/image_rect_raw'  # check the depth image topic in your Gazebo environmemt and replace this with your
-	listener = ImageListener(topic)
+	topic1 = '/camera/depth/image_rect_raw'  # check the depth image topic in your Gazebo environmemt and replace this with your
+	topic2  = '/camera/color/image_raw'
+	listener = ImageListener(topic1, topic2)
 	rospy.spin()
