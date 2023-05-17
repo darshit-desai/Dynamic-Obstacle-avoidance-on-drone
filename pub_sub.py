@@ -1,3 +1,4 @@
+import cv2
 from sensor_msgs.msg import Image as msg_Image
 from cv_bridge import CvBridge, CvBridgeError
 from std_msgs.msg import Header
@@ -10,7 +11,7 @@ os.environ['ROS_PYTHON_VERSION'] = '3'  # Replace '3' with your desired OpenCV v
 from cv_bridge import CvBridge, CvBridgeError
 import sys
 import os
-import cv2
+
 import numpy as np
 import copy as copy
 
