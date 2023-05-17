@@ -24,7 +24,7 @@ class ImageListener:
 		self.sub1 = rospy.Subscriber(topic1, msg_Image, self.imageDepthCallback1,queue_size=1)
 		self.sub2 = rospy.Subscriber(topic2, msg_Image, self.imageCallback2,queue_size=1)
 		self.pub = rospy.Publisher('/obstacle_detections', msg_Image, queue_size=1)
-	def imageDepthCallback(self, data):
+	def imageDepthCallback1(self, data):
 		cv_image = self.bridge.imgmsg_to_cv2(data, data.encoding)
 		self.imagePublisher(cv_image)
 	def imageCallback2(self, data):
