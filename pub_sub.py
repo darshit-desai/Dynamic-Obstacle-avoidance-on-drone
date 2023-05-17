@@ -119,10 +119,11 @@ class ImageListener:
 		z_o_body = (h_t+h_b)*d_b / (2*focal_length)
 
 		height_o_body = (-h_t+h_b)*d_b*15 / focal_length
+		color_image = self.color_image
 		if(z_o_body*15 < 1200):
-			cv2.rectangle(self.color_image, (y_min, x_min), (y_max, x_max), (255, 0, 0), 2)
+			cv2.rectangle(color_image, (y_min, x_min), (y_max, x_max), (255, 0, 0), 2)
 		
-		modified_msg = self.bridge.cv2_to_imgmsg(converted_image_depth, encoding='mono8')
+		modified_msg = self.bridge.cv2_to_imgmsg(color_image, encoding='mono8')
 		modified_msg.header = Header(stamp=rospy.Time.now())
 		self.pub.publish(modified_msg)      
 
