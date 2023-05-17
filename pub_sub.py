@@ -11,6 +11,7 @@ os.environ['ROS_PYTHON_VERSION'] = '3'  # Replace '3' with your desired OpenCV v
 from cv_bridge import CvBridge, CvBridgeError
 import sys
 import os
+import time
 
 import numpy as np
 import copy as copy
@@ -21,15 +22,17 @@ class ImageListener:
 		self.topic2 = topic2
 		self.color_image = None
 		self.bridge = CvBridge()
-		self.sub1 = rospy.Subscriber(topic1, msg_Image, self.imageDepthCallback1,queue_size=1)
-		self.sub2 = rospy.Subscriber(topic2, msg_Image, self.imageCallback2,queue_size=1)
-		self.pub = rospy.Publisher('/obstacle_detections', msg_Image, queue_size=1)
+		self.sub1 = rospy.Subscriber(topic1, msg_Image, self.imageDepthCallback1,queue_size=10)
+		self.sub2 = rospy.Subscriber(topic2, msg_Image, self.imageCallback2,queue_size=10)
+		self.pub = rospy.Publisher('/obstacle_detections', msg_Image, queue_size=10)
 	def imageDepthCallback1(self, data):
 		cv_image = self.bridge.imgmsg_to_cv2(data, data.encoding)
 		self.imagePublisher(cv_image)
 	def imageCallback2(self, data):
 		self.color_image = self.bridge.imgmsg_to_cv2(data, data.encoding)    
 	def imagePublisher(self,cv_image):
+		strt = time.time()
+		rate = rospy.Rate(20)
 		depth_image = copy.deepcopy(cv_image)
 		depth_values = depth_image.flatten()
 		depth_values = depth_values[depth_values != 0]
@@ -108,7 +111,13 @@ class ImageListener:
 						coord_list.append([i,j])
 
 		coordinates = np.array(coord_list)
-		x_max, y_max, x_min, y_min = np.max(coordinates[:,0]), np.max(coordinates[:,1]), np.min(coordinates[:,0]), np.min(coordinates[:,1])
+		# x_max, y_max, x_min, y_min = np.max(coordinates[:,0]), np.max(coordinates[:,1]), np.min(coordinates[:,0]), np.min(coordinates[:,1])
+		if len(coordinates) > 0:
+			x_max, y_max = np.max(coordinates, axis=0)
+			x_min, y_min = np.min(coordinates, axis=0)
+		else:
+    		# Handle the case when coordinates are empty
+			x_max, y_max, x_min, y_min = 0, 0, 0, 0
 
 		#normalize and convert a depth image which is of 64 bit to 8 bit
 		normalized_image_depth = cv2.normalize(depth_image, None, 0, 255, cv2.NORM_MINMAX)
@@ -119,17 +128,40 @@ class ImageListener:
 		z_o_body = (h_t+h_b)*d_b / (2*focal_length)
 
 		height_o_body = (-h_t+h_b)*d_b*15 / focal_length
-		color_image = self.color_image
-		if(z_o_body*15 < 1200):
-			cv2.rectangle(color_image, (y_min, x_min), (y_max, x_max), (255, 0, 0), 2)
-		
-		modified_msg = self.bridge.cv2_to_imgmsg(color_image, encoding='mono8')
+		# color_image = self.color_image
+		if(z_o_body*15 < 1500):
+			cv2.rectangle(converted_image_depth, (y_min, x_min), (y_max, x_max), (255, 0, 0), 2)
+		# Define the font properties
+		font = cv2.FONT_HERSHEY_SIMPLEX
+		font_scale = 0.5
+		color = (255, 0, 0)  # Text color in BGR format
+		thickness = 1  # Thickness of the text
+		text = "Depth: " + str(z_o_body*15) + " mm"
+
+		# Get the dimensions of the image
+		image_height, image_width = converted_image_depth.shape[:2]
+
+		# Calculate the size of the text
+		(text_width, text_height), _ = cv2.getTextSize(text, font, font_scale, thickness)
+
+		# Calculate the position of the text (top right corner)
+		text_position = (image_width - text_width - 10, text_height + 10)
+
+		# Add the text to the image
+		cv2.putText(converted_image_depth, text, text_position, font, font_scale, color, thickness)
+		modified_msg = self.bridge.cv2_to_imgmsg(converted_image_depth, encoding='mono8')
 		modified_msg.header = Header(stamp=rospy.Time.now())
-		self.pub.publish(modified_msg)      
+		self.pub.publish(modified_msg)
+		rate.sleep()
+		end_t = time.time()
+		global frame_count
+		frame_count+=1
+		print("Frame count:", frame_count)
+		print("Time taken: ", end_t-strt)      
 
 
 
-
+frame_count = 0
 if __name__ == '__main__':
 	rospy.init_node("depth_image_processor")
 	topic1 = '/camera/depth/image_rect_raw'  # check the depth image topic in your Gazebo environmemt and replace this with your
