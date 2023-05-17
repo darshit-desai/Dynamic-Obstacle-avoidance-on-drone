@@ -15,7 +15,7 @@ import time
 
 import numpy as np
 import copy as copy
-
+fps = 0
 class ImageListener:
 	def __init__(self, topic1, topic2):
 		self.topic1 = topic1
@@ -25,6 +25,9 @@ class ImageListener:
 		self.sub1 = rospy.Subscriber(topic1, msg_Image, self.imageDepthCallback1,queue_size=10)
 		self.sub2 = rospy.Subscriber(topic2, msg_Image, self.imageCallback2,queue_size=10)
 		self.pub = rospy.Publisher('/obstacle_detections', msg_Image, queue_size=10)
+		self.pub2 = rospy.Publisher('/UMaps', msg_Image, queue_size=10)
+		self.Umaps = None
+		self.obstacle_detections = None
 	def imageDepthCallback1(self, data):
 		cv_image = self.bridge.imgmsg_to_cv2(data, data.encoding)
 		self.imagePublisher(cv_image)
@@ -32,10 +35,8 @@ class ImageListener:
 		self.color_image = self.bridge.imgmsg_to_cv2(data, data.encoding)    
 	def imagePublisher(self,cv_image):
 		strt = time.time()
-		rate = rospy.Rate(20)
+		
 		depth_image = copy.deepcopy(cv_image)
-		depth_values = depth_image.flatten()
-		depth_values = depth_values[depth_values != 0]
 
 		bin_size=200
 		num_columns = depth_image.shape[1]
@@ -45,10 +46,6 @@ class ImageListener:
 			column_values = depth_image[:, col]
 			histogram, _ = np.histogram(column_values, bins=bin_size, range=(0,3000))
 			histograms = np.column_stack((histograms, histogram))
-
-		column_depth_values = []
-		for col in range(depth_image.shape[1]):
-			column_depth_values.extend(depth_image[:, col])
 
 		focal_length = 382.681243896484
 		T_poi = 500
@@ -70,13 +67,10 @@ class ImageListener:
 		res=np.array(T_pois)
 		final_arr = np.array(res>T_poi)
 		indices = np.where(final_arr == True)
-		new_hist = histograms[indices[0], :]
-		# print(T_pois)
 
-		normalized_image = cv2.normalize(histograms, None, 0, 255, cv2.NORM_MINMAX)
-		converted_image = np.uint8(normalized_image)
-		# conv_image = cv2.GaussianBlur(converted_image, (5, 5), 0)
-		_, binary_image = cv2.threshold(converted_image, 15, 36, cv2.THRESH_BINARY)
+		normalized_image_UDepth = cv2.normalize(histograms, None, 0, 255, cv2.NORM_MINMAX)
+		converted_image_UDepth = np.uint8(normalized_image_UDepth)
+		_, binary_image = cv2.threshold(converted_image_UDepth, 15, 36, cv2.THRESH_BINARY)
 
 		# Find contours in the binary image
 		contours, _ = cv2.findContours(binary_image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -102,11 +96,12 @@ class ImageListener:
 		w_o_body = (u_r - u_l)*d_b / focal_length
 
 		coord_list=[]
-		if (u_l>=640 or u_r>=640):
+		if (u_l>=depth_image.shape[1] or u_r>=depth_image.shape[1]):
 			print("out of bounds")
 		else:
-			for i in range(depth_image.shape[0]):
-				for j in range(u_l,u_r+1):
+			listulur =np.linspace(u_l,u_r,20,dtype=int)
+			for j in listulur:
+				for i in range(depth_image.shape[0]):
 					if ((depth_image[i][j] > (d_t*15)) and (depth_image[i][j] < ((d_t+l_o_body)*15))):
 						coord_list.append([i,j])
 
@@ -124,7 +119,6 @@ class ImageListener:
 		converted_image_depth = np.uint8(normalized_image_depth)
 		h_t = x_min
 		h_b = x_max
-
 		z_o_body = (h_t+h_b)*d_b / (2*focal_length)
 
 		height_o_body = (-h_t+h_b)*d_b*15 / focal_length
@@ -136,7 +130,8 @@ class ImageListener:
 		font_scale = 0.5
 		color = (255, 0, 0)  # Text color in BGR format
 		thickness = 1  # Thickness of the text
-		text = "Depth: " + str(z_o_body*15) + " mm"
+		global fps
+		text = "ZPose_body: " + str(z_o_body*15) + " mm" + "FPS: " + str(fps) + "FPS"
 
 		# Get the dimensions of the image
 		image_height, image_width = converted_image_depth.shape[:2]
@@ -149,13 +144,12 @@ class ImageListener:
 
 		# Add the text to the image
 		cv2.putText(converted_image_depth, text, text_position, font, font_scale, color, thickness)
-		modified_msg = self.bridge.cv2_to_imgmsg(converted_image_depth, encoding='mono8')
-		modified_msg.header = Header(stamp=rospy.Time.now())
-		self.pub.publish(modified_msg)
-		rate.sleep()
+		self.obstacle_detections = converted_image_depth
+		self.Umaps = converted_image_UDepth
 		end_t = time.time()
 		global frame_count
 		frame_count+=1
+		fps = 1/(end_t-strt)
 		print("Frame count:", frame_count)
 		print("Time taken: ", end_t-strt)      
 
@@ -164,7 +158,24 @@ class ImageListener:
 frame_count = 0
 if __name__ == '__main__':
 	rospy.init_node("depth_image_processor")
-	topic1 = '/camera/depth/image_rect_raw'  # check the depth image topic in your Gazebo environmemt and replace this with your
+	# topic1 = '/camera/depth/image_rect_raw'  # check the depth image topic in your Gazebo environmemt and replace this with your
+	topic1 = '/camera/aligned_depth_to_color/image_raw'
 	topic2  = '/camera/color/image_raw'
 	listener = ImageListener(topic1, topic2)
+	rate = rospy.Rate(5)
+	while not rospy.is_shutdown():
+		obstacleframe = listener.obstacle_detections
+		Umapframe = listener.Umaps
+		if (obstacleframe is not None or Umapframe is not None):
+			# modified_msg = listener.bridge.cv2_to_imgmsg(obstacleframe, encoding='mono8')
+			# modified_msg.header = Header(stamp=rospy.Time.now())
+			# listener.pub.publish(modified_msg)
+			# modified_msg2 = listener.bridge.cv2_to_imgmsg(Umapframe, encoding='mono8')
+			# modified_msg2.header = Header(stamp=rospy.Time.now())
+			# listener.pub2.publish(modified_msg2)
+			cv2.imshow("obstacle", obstacleframe)
+			cv2.imshow("Umap", Umapframe)
+			cv2.waitKey(1)
+			# rate.sleep()
+	cv2.destroyAllWindows()
 	rospy.spin()
