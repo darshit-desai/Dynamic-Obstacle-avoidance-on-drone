@@ -3,9 +3,9 @@ import cv2
 from cv_bridge import CvBridge
 import numpy as np
 import matplotlib.pylab as plt
-bag_file = '/home/shivam/Dronebag/test.bag'  # Replace with the path to your ROS bag file
+bag_file = '/home/darshit/rosbags/enae788m/2023-05-16-16-40-58.bag'  # Replace with the path to your ROS bag file
 topic = '/camera/depth/image_rect_raw'  # Replace with the specific image topic you want to process
-# max_messages = 500  # Number of messages to process
+max_messages = 500  # Number of messages to process
 
 # Open the ROS bag file
 bag = rosbag.Bag(bag_file)
@@ -46,9 +46,12 @@ bag.close()
 # Display the first depth image
 if depth_images:
     
-    first_depth_image = depth_images[700]
-    print(first_depth_image)
-    cv2.imshow("First Depth Image", first_depth_image)
+    first_depth_image = depth_images[600]
+    # print(first_depth_image)
+    # cv2.imshow("First Depth Image", first_depth_image)
+    plt.imshow(first_depth_image, cmap='gray')
+    plt.show()
+    # cv2.imwrite('first_depth_image.png',first_depth_image)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
     # You can add additional processing logic here after the imshow
@@ -58,16 +61,8 @@ depth_image=first_depth_image
 # Extract the depth values from the image
 depth_values = depth_image.flatten()
 depth_values = depth_values[depth_values != 0]
-# Compute the histogram
-hist, bins = np.histogram(depth_values, bins=50, range=(0, 1000))  # Adjust the number of bins and range as needed
 
-# Plot the histogram
-plt.bar(bins[:-1], hist, width=1)
-plt.xlabel('Depth Value')
-plt.ylabel('Frequency')
-plt.title('Depth Value Histogram')
-plt.show()
-bin_size=20
+bin_size=200
 # Compute the column-wise depth value histograms
 # Compute the column-wise depth value histograms
 num_columns = depth_image.shape[1]
@@ -75,9 +70,21 @@ histograms = np.zeros((bin_size, 1), dtype=np.int16)
 
 for col in range(num_columns):
     column_values = depth_image[:, col]
-    histogram, _ = np.histogram(column_values, bins=bin_size, range=(0,1000))
+    histogram, _ = np.histogram(column_values, bins=bin_size, range=(0,3000))
     histograms = np.column_stack((histograms, histogram))
-    
+
+column_depth_values = []
+for col in range(depth_image.shape[1]):
+    column_depth_values.extend(depth_image[:, col])
+
+# Plot histogram
+plt.hist(column_depth_values, bins=500)  # Adjust the number of bins as needed
+plt.xlabel('Depth')
+plt.ylabel('Frequency')
+plt.title('Histogram of Column-wise Depth Values')
+plt.show()
+
+
     
     
 
@@ -88,3 +95,109 @@ plt.ylabel('Row')
 plt.title('U-Depth Map')
 plt.colorbar()
 plt.show()
+
+focal_length = 382.681243896484
+T_poi = 400
+T_tho = 1800
+values = list(range(0, 3001, 15))  # Generate the list of values spaced in 50 divisions from 0 to 3000
+averages = []
+
+for i in range(len(values)-1):
+    start = values[i]
+    end = values[i+1]
+    average = (start + end) / 2
+    averages.append(average)
+
+# Print or use the averages as needed
+# print(averages)
+dbin = np.array(averages)
+
+T_pois = focal_length * T_tho / (dbin)
+print(T_pois)
+res=np.array(T_pois)
+final_arr = np.array(res>T_poi)
+indices = np.where(final_arr == True)
+print(indices)
+new_hist = histograms[indices[0], :]
+
+# Display the U-depth map
+plt.imshow(new_hist, cmap='gray')
+plt.xlabel('Column')
+plt.ylabel('Row')
+plt.title('U-Depth Map')
+plt.colorbar()
+plt.show()
+normalized_image = cv2.normalize(histograms, None, 0, 255, cv2.NORM_MINMAX)
+converted_image = np.uint8(normalized_image)
+plt.imshow(converted_image, cmap='gray')
+plt.xlabel('Column')
+plt.ylabel('Row')
+plt.title('U-Depth Map')
+plt.colorbar()
+plt.show()
+_, binary_image = cv2.threshold(converted_image, 15, 36, cv2.THRESH_BINARY)
+
+# Find contours in the binary image
+contours, _ = cv2.findContours(binary_image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+areas = []
+coords = []
+# Iterate through contours and draw bounding boxes
+for contour in contours:
+    x, y, width, height = cv2.boundingRect(contour)
+    areas.append(cv2.contourArea(contour))
+    coords.append((x, y, width, height))
+
+#max of areas list index gets coords
+max_index = areas.index(max(areas))
+x, y, width, height = coords[max_index]
+cv2.rectangle(converted_image, (x, y), (x + width, y + height), (255, 0, 0), 1)
+
+u_l, d_t = x, y
+u_r, d_b = x + width, y + height
+
+x_o_body = d_b
+y_o_body = ((u_l + u_r)*d_b) / (2*focal_length)
+l_o_body = 2*(d_b-d_t)
+w_o_body = (u_r - u_l)*d_b / focal_length
+
+print(u_l,u_r,d_t,d_t+l_o_body)
+
+# Display the grayscale image with bounding boxes
+cv2.imshow('Bounding Boxes', converted_image)
+cv2.waitKey(0)
+cv2.destroyAllWindows()
+coord_list=[]
+for i in range(depth_image.shape[0]):
+    for j in range(u_l,u_r+1):
+        if ((depth_image[i][j] > (d_t*15)) and (depth_image[i][j] < ((d_t+l_o_body)*15))):
+            coord_list.append([i,j])
+
+coordinates = np.array(coord_list)
+x_max, y_max, x_min, y_min = np.max(coordinates[:,0]), np.max(coordinates[:,1]), np.min(coordinates[:,0]), np.min(coordinates[:,1])
+print(x_max, y_max, x_min, y_min)
+#normalize and convert a depth image which is of 64 bit to 8 bit
+normalized_image_depth = cv2.normalize(depth_image, None, 0, 255, cv2.NORM_MINMAX)
+converted_image_depth = np.uint8(normalized_image_depth)
+cv2.rectangle(converted_image_depth, (y_min, x_min), (y_max, x_max), (255, 0, 0), 2)
+
+plt.imshow(converted_image_depth, cmap='gray')
+plt.show()
+
+h_t = x_min
+h_b = x_max
+
+z_o_body = (h_t+h_b)*d_b / (2*focal_length)
+print(z_o_body)
+height_o_body = (-h_t+h_b)*d_b*15 / focal_length
+print(height_o_body)
+
+
+
+
+
+
+
+
+
+
+
