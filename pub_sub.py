@@ -6,12 +6,18 @@ import rospy
 from rospy.numpy_msg import numpy_msg
 from rospy_tutorials.msg import Floats
 from sensor_msgs.msg import Image
+from geometry_msgs.msg import PoseStamped,Pose,Point
 import os
 os.environ['ROS_PYTHON_VERSION'] = '3'  # Replace '3' with your desired OpenCV version
 from cv_bridge import CvBridge, CvBridgeError
 import sys
 import os
 import time
+from scipy.spatial.transform import Rotation
+# Create a rotation object for rotation around the z-axis
+
+
+
 
 import numpy as np
 import copy as copy
@@ -26,6 +32,23 @@ class ImageListener:
 		self.sub2 = rospy.Subscriber(topic2, msg_Image, self.imageCallback2,queue_size=10)
 		self.pub = rospy.Publisher('/obstacle_detections', msg_Image, queue_size=10)
 		self.pub2 = rospy.Publisher('/UMaps', msg_Image, queue_size=10)
+		########### PUBLISH BODY POSITION
+		# publisher to publish postion of obstacle
+		self.pub3=rospy.Publisher('/obstacle_pose',PoseStamped,queue_size=1)
+		# Store position msgs
+		self.obstacle_pos_body=Point()
+		self.obstacle_pos_body.x=0
+		self.obstacle_pos_body.y=0
+		self.obstacle_pos_body.z=0
+		self.pose_stamped_msg = PoseStamped()
+		self.pose_stamped_msg.header = Header()
+		self.pose_stamped_msg.header.stamp = rospy.Time.now()
+		self.pose_stamped_msg.header.frame_id = "map"
+
+		pose_msg=Pose()
+		pose_msg.position=self.obstacle_pos_body
+		self.pose_stamped_msg.pose=pose_msg
+
 		self.Umaps = None
 		self.obstacle_detections = None
 	def imageDepthCallback1(self, data):
@@ -91,7 +114,10 @@ class ImageListener:
 		u_r, d_b = x + width, y + height
 
 		x_o_body = d_b
-		y_o_body = ((u_l + u_r)*d_b) / (2*focal_length)
+		columns_image_ctr = (depth_image.shape[1])/2
+		rows_image_ctr = (depth_image.shape[0])/2
+		y_o_body = ((u_l-columns_image_ctr)+(u_r-columns_image_ctr))*d_b/(2*focal_length)
+		# y_o_body = ((u_l + u_r)*d_b) / (2*focal_length)
 		l_o_body = 2*(d_b-d_t)
 		w_o_body = (u_r - u_l)*d_b / focal_length
 
@@ -119,19 +145,21 @@ class ImageListener:
 		converted_image_depth = np.uint8(normalized_image_depth)
 		h_t = x_min
 		h_b = x_max
-		z_o_body = (h_t+h_b)*d_b / (2*focal_length)
+		# z_o_body = (h_t+h_b)*d_b / (2*focal_length)
+		z_o_body = ((h_t-rows_image_ctr)+(h_b-rows_image_ctr))/(2*focal_length)
+
 
 		height_o_body = (-h_t+h_b)*d_b*15 / focal_length
 		# color_image = self.color_image
-		if(z_o_body*15 < 1500):
-			cv2.rectangle(converted_image_depth, (y_min, x_min), (y_max, x_max), (255, 0, 0), 2)
+		# if(x_o_body*15 < 1500):
+		cv2.rectangle(converted_image_depth, (y_min, x_min), (y_max, x_max), (255, 0, 0), 2)
 		# Define the font properties
 		font = cv2.FONT_HERSHEY_SIMPLEX
 		font_scale = 0.5
 		color = (255, 0, 0)  # Text color in BGR format
 		thickness = 1  # Thickness of the text
 		global fps
-		text = "ZPose_body: " + str(z_o_body*15) + " mm" + "FPS: " + str(fps) + "FPS"
+		text = "ZPose_body: " + str(x_o_body*15) + " mm" + "FPS: " + str(fps) + "FPS"
 
 		# Get the dimensions of the image
 		image_height, image_width = converted_image_depth.shape[:2]
@@ -151,7 +179,20 @@ class ImageListener:
 		frame_count+=1
 		fps = 1/(end_t-strt)
 		print("Frame count:", frame_count)
-		print("Time taken: ", end_t-strt)      
+		print("Time taken: ", end_t-strt)
+		# Apply the rotation to the vector
+		rotation_x = Rotation.from_euler('x',180 , degrees=True)
+		rotation_z = Rotation.from_euler('z',90 , degrees=True)
+		x=(x_o_body*15)/1000
+		y=(y_o_body*15)/1000
+		z=(z_o_body*15)/1000
+		rotated_vector = rotation_x.apply(np.array([x,y,z]))
+		rotated_vector = rotation_z.apply(rotated_vector)
+		self.obstacle_pos_body.x=rotated_vector[0]
+		self.obstacle_pos_body.y=rotated_vector[1]
+		self.obstacle_pos_body.z=rotated_vector[2]
+
+
 
 
 
@@ -173,9 +214,10 @@ if __name__ == '__main__':
 			# modified_msg2 = listener.bridge.cv2_to_imgmsg(Umapframe, encoding='mono8')
 			# modified_msg2.header = Header(stamp=rospy.Time.now())
 			# listener.pub2.publish(modified_msg2)
+			listener.pub3.publish(listener.pose_stamped_msg)
 			cv2.imshow("obstacle", obstacleframe)
 			cv2.imshow("Umap", Umapframe)
 			cv2.waitKey(1)
-			# rate.sleep()
+			rate.sleep()
 	cv2.destroyAllWindows()
 	rospy.spin()
