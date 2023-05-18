@@ -24,6 +24,7 @@ import copy as copy
 fps = 0
 class ImageListener:
 	def __init__(self, topic1, topic2):
+		"""@brief"""
 		self.topic1 = topic1
 		self.topic2 = topic2
 		self.color_image = None
