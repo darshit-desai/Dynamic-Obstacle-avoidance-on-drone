@@ -101,7 +101,7 @@ class ImageListener:
 		focal_length = 382.681243896484 # focal length of the camera in mm
 		T_poi = 500 # threshold for the obstacle detection
 		T_tho = 1800 # threshold for the UMaps
-		values = list(range(0, 3001, 15))  # Generate the list of values spaced in 50 divisions from 0 to 3000
+		values = list(range(0, 3001, 15))  # Generate the list of values spaced in 15 divisions from 0 to 3000
 		averages = []
 		# loop through the values list
 		for i in range(len(values)-1):
